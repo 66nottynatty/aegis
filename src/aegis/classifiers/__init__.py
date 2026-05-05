@@ -2,6 +2,8 @@
 
 from aegis.classifiers.aegis import AegisClassifier
 from aegis.classifiers.base import BaseClassifier, ClassifierResult
+from aegis.classifiers.deberta import DebertaClassifier
+from aegis.classifiers.llama_guard import LlamaGuardClassifier
 from aegis.classifiers.rule_based import RuleBasedClassifier
 
 __all__ = [
@@ -9,4 +11,6 @@ __all__ = [
     "ClassifierResult",
     "AegisClassifier",
     "RuleBasedClassifier",
+    "DebertaClassifier",
+    "LlamaGuardClassifier",
 ]

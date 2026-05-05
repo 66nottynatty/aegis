@@ -11,8 +11,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class ClassifierBackend(StrEnum):
     """Classifier backend options."""
 
-    AEGIS = "aegis"
+    TIERED = "tiered"
+    DEBERTA = "deberta"
     RULE = "rule"
+    AEGIS = "aegis"
 
 
 class Settings(BaseSettings):
@@ -80,7 +82,7 @@ class ClassifierSettings(BaseSettings):
         extra="ignore",
     )
 
-    backend: ClassifierBackend = Field(default=ClassifierBackend.RULE, alias="backend")
+    backend: ClassifierBackend = Field(default=ClassifierBackend.TIERED, alias="backend")
     model_path: str = Field(default="/app/models/aegis_classifier.pt", alias="model_path")
     device: str = Field(default="auto", alias="device")
 
