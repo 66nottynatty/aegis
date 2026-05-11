@@ -13,6 +13,27 @@ def should_block_content(state: AegisState) -> str:
     return "continue"
 
 
+def route_post_guardrails(state: AegisState) -> str:
+    """Route to the appropriate next node after guardrails."""
+    if state.get("should_block", False):
+        return "block"
+
+    content_type = state["content_type"]
+    if content_type in (ContentType.HTML, ContentType.PDF):
+        return "structural"
+    elif content_type == ContentType.IMAGE:
+        return "visual"
+    else:  # TEXT
+        return "semantic"
+
+
+def route_post_structural(state: AegisState) -> str:
+    """Route after structural analysis."""
+    if state["content_type"] == ContentType.PDF:
+        return "visual"
+    return "semantic"
+
+
 def should_analyze_deep(state: AegisState) -> str:
     """Determine if deep analysis is needed based on content type and initial signals."""
     content_type = state["content_type"]

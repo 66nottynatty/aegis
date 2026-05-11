@@ -72,7 +72,9 @@ async def get_session_summary(
         store = get_store()
 
         # Get session info
-        session_resp = store.client.table("sessions").select("*").eq("id", session_id).execute()
+        session_resp = (
+            store.client.table("sessions").select("*").eq("id", session_id).execute()
+        )
         if not session_resp.data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -81,13 +83,24 @@ async def get_session_summary(
 
         session_row = session_resp.data[0]
 
-        # Get jobs for this session
-        jobs_resp = store.client.table("jobs").select("*").eq("session_id", session_id).execute()
+        # Use real SQL aggregation for core stats
+        stats = await store.get_session_summary(session_id)
 
-        total_scans = len(jobs_resp.data) if jobs_resp.data else 0
-        injections_detected = 0
+        # Get jobs for history and complex distributions
+        jobs_resp = (
+            store.client.table("jobs")
+            .select("*")
+            .eq("session_id", session_id)
+            .order("created_at", desc=True)
+            .limit(50)
+            .execute()
+        )
+
+        total_scans = stats.get("total_scans", 0)
+        injections_detected = stats.get("injections_detected", 0)
+        avg_risk_score = stats.get("avg_risk_score", 0.0)
+
         risk_distribution: dict[str, int] = {}
-        risk_scores: list[float] = []
         agent_trigger_counts: dict[str, int] = {}
         scan_history: list[dict[str, Any]] = []
         last_scan_at: datetime | None = None
@@ -102,41 +115,34 @@ async def get_session_summary(
                 risk_level = result.get("risk_level", "unknown")
                 risk_distribution[risk_level] = risk_distribution.get(risk_level, 0) + 1
 
-                # Injections count
-                if result.get("is_injection", False):
-                    injections_detected += 1
-
-                # Risk scores for average
-                risk_score = result.get("risk_score", 0.0)
-                risk_scores.append(risk_score)
-
                 # Agent triggers
                 findings = result.get("findings", [])
                 for finding in findings:
                     agent = finding.get("agent", "unknown")
                     if finding.get("score", 0) > 0.3:
-                        agent_trigger_counts[agent] = agent_trigger_counts.get(agent, 0) + 1
+                        agent_trigger_counts[agent] = (
+                            agent_trigger_counts.get(agent, 0) + 1
+                        )
 
                 # Scan history (last 10)
-                created_at = job.get("created_at")
-                if created_at:
-                    scan_history.append({
-                        "job_id": job.get("id"),
-                        "risk_level": risk_level,
-                        "risk_score": risk_score,
-                        "is_injection": result.get("is_injection", False),
-                        "created_at": created_at,
-                    })
-                    job_time = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
-                    if last_scan_at is None or job_time > last_scan_at:
-                        last_scan_at = job_time
+                if len(scan_history) < 10:
+                    created_at = job.get("created_at")
+                    if created_at:
+                        scan_history.append(
+                            {
+                                "job_id": job.get("id"),
+                                "risk_level": risk_level,
+                                "risk_score": result.get("risk_score", 0.0),
+                                "is_injection": result.get("is_injection", False),
+                                "created_at": created_at,
+                            }
+                        )
 
-        # Sort history by date and limit
-        scan_history.sort(key=lambda x: x["created_at"], reverse=True)
-        scan_history = scan_history[:10]
-
-        # Calculate average risk score
-        avg_risk_score = sum(risk_scores) / len(risk_scores) if risk_scores else 0.0
+                # Set last scan at from first job (since we ordered by created_at desc)
+                if last_scan_at is None and job.get("created_at"):
+                    last_scan_at = datetime.fromisoformat(
+                        job["created_at"].replace("Z", "+00:00")
+                    )
 
         # Get top triggered agents
         top_agents = sorted(

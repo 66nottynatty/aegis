@@ -64,6 +64,18 @@ class AegisCrew:
             elapsed_ms = int((time.monotonic() - start_time) * 1000)
             final_state["processing_time_ms"] = elapsed_ms
 
+            # Record metrics
+            try:
+                from aegis.core.metrics import record_scan_metrics
+                record_scan_metrics(
+                    content_type=final_state["content_type"].value,
+                    risk_level=final_state["risk_level"],
+                    is_injection=final_state["is_injection"],
+                    latency_ms=float(elapsed_ms),
+                )
+            except Exception as m_exc:
+                logger.debug("Failed to record metrics: %s", m_exc)
+
             # Build and return result
             return self._build_scan_result(final_state)
 

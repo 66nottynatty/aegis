@@ -59,6 +59,7 @@ dependencies = [
     "langfuse>=2.0.0",
     "nemoguardrails>=0.8.0",
     "opencv-python>=4.8.0",
+    "prometheus-client>=0.20.0",
 ]
 
 [project.optional-dependencies]

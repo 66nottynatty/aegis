@@ -132,6 +132,7 @@ class Mem0Settings(BaseSettings):
         extra="ignore",
     )
 
+    enabled: bool = True
     api_key: str = ""
     qdrant_host: str = ""
     qdrant_port: int = 6333

@@ -94,6 +94,11 @@ def create_app() -> FastAPI:
             services=services,
         )
 
+    @app.get("/metrics", tags=["observability"])
+    async def metrics():
+        from aegis.core.metrics import get_metrics_response
+        return get_metrics_response()
+
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
         request_id = getattr(request.state, "request_id", None)

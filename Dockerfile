@@ -50,17 +50,16 @@ RUN pip install --no-cache-dir /tmp/*.whl && rm /tmp/*.whl
 ENV HF_HOME=/app/.cache
 RUN mkdir -p /app/.cache && chown -R aegis:aegis /app/.cache
 
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')" && \
-    python -c "from transformers import AutoTokenizer, AutoModelForSequenceClassification; \
-model_name = 'protectai/deberta-v3-base-prompt-injection-v2'; \
-AutoTokenizer.from_pretrained(model_name); \
-AutoModelForSequenceClassification.from_pretrained(model_name)"
+# Copy scripts for model downloading
+COPY scripts/download_models.py /app/scripts/download_models.py
+RUN chown -R aegis:aegis /app/scripts
+
+# Switch to non-root user to download models to the correct cache directory
+USER aegis
+RUN python /app/scripts/download_models.py
 
 ENV TRANSFORMERS_OFFLINE=1
 ENV HF_HUB_OFFLINE=1
-
-# Switch to non-root user
-USER aegis
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
