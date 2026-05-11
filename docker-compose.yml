@@ -42,6 +42,9 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
+    profiles:
+      - llm
+      - full
 
   # ─── Langfuse (Telemetry) ─────────────────────────────────────────────────────
   langfuse:
@@ -121,23 +124,15 @@ services:
       - .env
     environment:
       - REDIS_URL=redis://redis:6379/0
-      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
       - MEM0_QDRANT_HOST=${MEM0_QDRANT_HOST:-}
       - MEM0_USE_SUPABASE=${MEM0_USE_SUPABASE:-true}
     depends_on:
       redis:
         condition: service_healthy
-      ollama:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      start_period: 30s
-      retries: 3
-    volumes:
-      - model_cache:/home/aegis/.cache/huggingface:ro
-      - aegis_models:/app/models:ro
+    profiles:
+      - core
+      - full
 
   # ─── Background Worker ────────────────────────────────────────────────────────
   worker:
@@ -152,15 +147,13 @@ services:
       - .env
     environment:
       - REDIS_URL=redis://redis:6379/0
-      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
     depends_on:
       redis:
         condition: service_healthy
-      ollama:
-        condition: service_healthy
-    volumes:
-      - model_cache:/home/aegis/.cache/huggingface:ro
-      - aegis_models:/app/models:ro
+    profiles:
+      - core
+      - full
 
 volumes:
   redis_data:

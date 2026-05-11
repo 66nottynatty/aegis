@@ -55,8 +55,9 @@ COPY scripts/download_models.py /app/scripts/download_models.py
 RUN chown -R aegis:aegis /app/scripts
 
 # Switch to non-root user to download models to the correct cache directory
+# Model download is optional - the system works without pre-downloaded models
 USER aegis
-RUN python /app/scripts/download_models.py
+RUN python /app/scripts/download_models.py || true
 
 ENV TRANSFORMERS_OFFLINE=1
 ENV HF_HUB_OFFLINE=1
@@ -69,5 +70,8 @@ EXPOSE 8000
 
 ENV AEGIS_API_HOST=0.0.0.0
 ENV AEGIS_API_PORT=8000
+
+# Ollama is now optional - the API will use OpenRouter as fallback if not available
+ENV OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://localhost:11434}
 
 CMD ["aegis", "serve", "--host", "0.0.0.0", "--port", "8000"]
