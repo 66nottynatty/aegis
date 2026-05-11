@@ -46,8 +46,18 @@ RUN groupadd -r aegis && useradd -r -g aegis aegis
 COPY --from=builder /build/dist/*.whl /tmp/
 RUN pip install --no-cache-dir /tmp/*.whl && rm /tmp/*.whl
 
-# Pre-download sentence transformers model
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')" || true
+# Pre-download models for offline mode
+ENV HF_HOME=/app/.cache
+RUN mkdir -p /app/.cache && chown -R aegis:aegis /app/.cache
+
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')" && \
+    python -c "from transformers import AutoTokenizer, AutoModelForSequenceClassification; \
+model_name = 'protectai/deberta-v3-base-prompt-injection-v2'; \
+AutoTokenizer.from_pretrained(model_name); \
+AutoModelForSequenceClassification.from_pretrained(model_name)"
+
+ENV TRANSFORMERS_OFFLINE=1
+ENV HF_HUB_OFFLINE=1
 
 # Switch to non-root user
 USER aegis

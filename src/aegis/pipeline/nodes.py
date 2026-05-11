@@ -98,9 +98,29 @@ def guardrails_node(state: AegisState) -> dict[str, Any]:
 
     try:
         result = check_guardrails(text)
+        should_block = result.get("blocked", False)
+        
+        findings = []
+        if should_block:
+            finding = AgentFinding(
+                agent="guardrails",
+                score=result.get("score", 1.0),
+                signals=result.get("patterns_matched", ["guardrails_block"]),
+                explanation=result.get("reason", "Content blocked by guardrails"),
+                metadata={"source": result.get("source", "unknown")}
+            )
+            findings.append(finding)
+            return {
+                "guardrails_result": result,
+                "should_block": True,
+                "findings": findings,
+                "risk_score": result.get("score", 1.0),
+                "risk_level": "high" if result.get("score", 0.0) > 0.7 else "medium",
+            }
+
         return {
             "guardrails_result": result,
-            "should_block": result.get("blocked", False),
+            "should_block": False,
         }
     except Exception as exc:
         logger.warning("Guardrails check failed: %s", exc)
@@ -275,17 +295,8 @@ def behavioral_node(state: AegisState) -> dict[str, Any]:
 
 def verdict_node(state: AegisState) -> dict[str, Any]:
     """Aggregate findings and produce final verdict."""
-    # Collect all findings
-    all_findings: list[AgentFinding] = []
-    for key in ["structural_finding", "semantic_finding", "intent_finding", "visual_finding", "behavioral_finding"]:
-        finding = state.get(key)
-        if finding:
-            all_findings.append(finding)
-
-    # Include verdict finding if already exists
-    existing_verdict = state.get("verdict_finding")
-    if existing_verdict and existing_verdict.agent == "verdict":
-        all_findings = [f for f in all_findings if f.agent != "verdict"]
+    # Use accumulated findings from state
+    all_findings = state.get("findings", [])
 
     context: dict[str, Any] = {
         "agent_findings": all_findings,

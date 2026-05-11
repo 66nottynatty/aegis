@@ -1,136 +1,109 @@
-"""NeMo Guardrails integration with Ollama LLM."""
+"""Tiered classifier architecture for content safety."""
 
 from __future__ import annotations
 
 import logging
 from typing import Any
 
-from aegis.core.config import get_config
+from aegis.classifiers.deberta import DebertaClassifier
+from aegis.classifiers.llama_guard import LlamaGuardClassifier
+from aegis.classifiers.rule_based import RuleBasedClassifier
 
 logger = logging.getLogger(__name__)
 
-# Default blocked patterns (always checked)
-BLOCKED_PATTERNS = [
-    "ignore all previous instructions",
-    "disregard all prior",
-    "you are now in developer mode",
-    "dan mode",
-    "jailbreak mode",
-    "system prompt: ",
-    "<system>",
-    "[system prompt]",
-]
+# Initialize classifiers lazily
+_rule_classifier = RuleBasedClassifier()
+_deberta_classifier: DebertaClassifier | None = None
+_llama_guard_classifier: LlamaGuardClassifier | None = None
+
+
+def _get_deberta() -> DebertaClassifier:
+    global _deberta_classifier
+    if _deberta_classifier is None:
+        _deberta_classifier = DebertaClassifier()
+    return _deberta_classifier
+
+
+def _get_llama_guard() -> LlamaGuardClassifier:
+    global _llama_guard_classifier
+    if _llama_guard_classifier is None:
+        _llama_guard_classifier = LlamaGuardClassifier()
+    return _llama_guard_classifier
 
 
 def check_guardrails(text: str) -> dict[str, Any]:
     """
-    Check content against guardrails.
+    Check content against tiered classifiers.
 
-    First runs pattern-based checks, then optionally uses NeMo+Ollama.
+    1. Tier 1: Rule-based (Regex)
+    2. Tier 2: DeBERTa (ML)
+    3. Tier 3: Llama Guard (LLM) - only if Tier 2 is ambiguous
 
     Args:
         text: The content to check
 
     Returns:
-        Dictionary with:
-        - blocked: bool - whether to block the content
-        - reason: str | None - reason for blocking
-        - score: float - confidence score 0-1
-        - patterns_matched: list[str] - patterns that triggered
+        Dictionary with decision and metadata
     """
-    # Pattern-based quick check
-    text_lower = text.lower()
-    matched_patterns = []
-
-    for pattern in BLOCKED_PATTERNS:
-        if pattern in text_lower:
-            matched_patterns.append(pattern)
-
-    if matched_patterns:
+    # --- Tier 1: Rule-based ---
+    rule_result = _rule_classifier.predict(text)
+    if rule_result.score >= 0.7:
         return {
             "blocked": True,
-            "reason": f"Blocked patterns detected: {matched_patterns[:3]}",
-            "score": min(1.0, len(matched_patterns) * 0.3 + 0.5),
-            "patterns_matched": matched_patterns,
-            "source": "pattern",
+            "reason": f"Tier 1: Rule-based match - {rule_result.matched_patterns[:2]}",
+            "score": rule_result.score,
+            "patterns_matched": rule_result.matched_patterns,
+            "source": "rule_based",
         }
 
-    # Try NeMo+Ollama if available
-    nemo_result = _check_nemo_guardrails(text)
-    if nemo_result:
-        return nemo_result
+    # --- Tier 2: DeBERTa ---
+    deberta = _get_deberta()
+    if deberta.is_available():
+        deberta_result = deberta.predict(text)
+        
+        if deberta_result.score > 0.7:
+            return {
+                "blocked": True,
+                "reason": "Tier 2: DeBERTa ML classifier high-risk detection",
+                "score": deberta_result.score,
+                "patterns_matched": deberta_result.matched_patterns,
+                "source": "deberta",
+            }
+        
+        if deberta_result.score < 0.35:
+            return {
+                "blocked": False,
+                "reason": None,
+                "score": deberta_result.score,
+                "patterns_matched": [],
+                "source": "deberta",
+            }
+        
+        # Ambiguous (0.35 - 0.70) -> Fall through to Tier 3
+        logger.info("DeBERTa score ambiguous (%.3f), falling back to Tier 3", deberta_result.score)
+    else:
+        logger.warning("DeBERTa classifier not available, falling back to Tier 3")
 
-    # Default: allow
+    # --- Tier 3: Llama Guard ---
+    llama_guard = _get_llama_guard()
+    if llama_guard.is_available():
+        lg_result = llama_guard.predict(text)
+        return {
+            "blocked": lg_result.label == "injection",
+            "reason": f"Tier 3: Llama Guard analysis: {lg_result.matched_patterns[0] if lg_result.matched_patterns else 'Unknown'}",
+            "score": lg_result.score,
+            "patterns_matched": lg_result.matched_patterns,
+            "source": "llama_guard",
+        }
+
+    # Default fallback if LLM is unavailable
     return {
         "blocked": False,
-        "reason": None,
+        "reason": "Classifiers completed with no high-risk detection",
         "score": 0.0,
         "patterns_matched": [],
         "source": "default",
     }
-
-
-def _check_nemo_guardrails(text: str) -> dict[str, Any] | None:
-    """Check using NeMo Guardrails with Ollama backend."""
-    config = get_config()
-
-    if not config.ollama.base_url:
-        return None
-
-    try:
-        # Try to import and use NeMo Guardrails
-        from nemoguardrails import LLMRails, RailsConfig
-
-        # Load config from our guardrails directory
-        rails_config = RailsConfig.from_path(
-            "/app/src/aegis/guardrails/config",
-            config={
-                "models": [
-                    {
-                        "type": "main",
-                        "engine": "ollama",
-                        "model": config.ollama.model,
-                        "base_url": config.ollama.base_url,
-                    }
-                ]
-            },
-        )
-
-        rails = LLMRails(config=rails_config)
-
-        # Check the content
-        response = rails.generate(
-            messages=[{"role": "user", "content": f"Check this content: {text[:500]}"}]
-        )
-
-        # Parse response for blocking decision
-        content = response.get("content", "").lower()
-
-        blocked = any(word in content for word in ["block", "reject", "inappropriate", "harmful"])
-
-        if blocked:
-            return {
-                "blocked": True,
-                "reason": "NeMo guardrails identified inappropriate content",
-                "score": 0.8,
-                "patterns_matched": [],
-                "source": "nemo",
-            }
-
-        return {
-            "blocked": False,
-            "reason": None,
-            "score": 0.0,
-            "patterns_matched": [],
-            "source": "nemo",
-        }
-
-    except ImportError:
-        logger.debug("NeMo Guardrails not available")
-        return None
-    except Exception as exc:
-        logger.debug("NeMo guardrails check failed: %s", exc)
-        return None
 
 
 def sanitize_content(text: str) -> str:
@@ -147,13 +120,12 @@ def sanitize_content(text: str) -> str:
     sanitized = text.replace("\x00", "")
 
     # Remove zero-width characters
-    zero_width = ["\u200b", "\u200c", "\u200d", "\u200e", "\u200f", "\ufeff"]
-    for char in zero_width:
+    from aegis.core.constants import ZERO_WIDTH_CHARS
+    for char in ZERO_WIDTH_CHARS:
         sanitized = sanitized.replace(char, "")
 
     # Normalize excessive whitespace
     import re
-
     sanitized = re.sub(r"\s+", " ", sanitized)
 
     # Truncate if extremely long

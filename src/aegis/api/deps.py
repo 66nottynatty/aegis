@@ -84,6 +84,17 @@ async def check_rate_limit(
     return api_key_data
 
 
+async def get_admin_user(
+    api_key_data: Annotated[dict[str, Any], Depends(get_api_key_data)],
+) -> dict[str, Any]:
+    if not api_key_data.get("is_admin", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin privileges required",
+        )
+    return api_key_data
+
+
 def _get_current_minute() -> str:
     import time
     return str(int(time.time()) // 60)
