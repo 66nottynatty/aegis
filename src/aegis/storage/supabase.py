@@ -135,6 +135,50 @@ class SupabaseStore:
             logger.warning("Failed to get API key: %s", exc)
             return None
 
+    async def create_api_key(self, user_id: str, tier: str = "free", description: str | None = None, is_admin: bool = False) -> dict[str, Any]:
+        import hashlib
+        import secrets
+        
+        raw_key = f"aegis_{tier}_{secrets.token_hex(16)}"
+        key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+        
+        data = {
+            "key_hash": key_hash,
+            "user_id": user_id,
+            "tier": tier,
+            "description": description,
+            "is_admin": is_admin,
+            "is_active": True,
+            "created_at": datetime.utcnow().isoformat(),
+        }
+        
+        try:
+            response = self.client.table("api_keys").insert(data).execute()
+            result = response.data[0]
+            result["raw_key"] = raw_key  # Return the raw key only once upon creation
+            return result
+        except Exception as exc:
+            raise StorageError(f"Failed to create API key: {exc}") from exc
+
+    async def list_api_keys(self) -> list[dict[str, Any]]:
+        try:
+            response = self.client.table("api_keys").select("*").order("created_at", desc=True).execute()
+            return response.data
+        except Exception as exc:
+            raise StorageError(f"Failed to list API keys: {exc}") from exc
+
+    async def revoke_api_key(self, key_id: str) -> bool:
+        try:
+            response = self.client.table("api_keys").update({"is_active": False, "updated_at": datetime.utcnow().isoformat()}).eq("id", key_id).execute()
+            return len(response.data) > 0
+        except Exception as exc:
+            # Check if updated_at exists, some schemas might not have it for api_keys
+            try:
+                response = self.client.table("api_keys").update({"is_active": False}).eq("id", key_id).execute()
+                return len(response.data) > 0
+            except Exception:
+                raise StorageError(f"Failed to revoke API key: {exc}") from exc
+
     def _row_to_job_response(self, row: dict[str, Any]) -> JobResponse:
         result = None
         if row.get("result"):

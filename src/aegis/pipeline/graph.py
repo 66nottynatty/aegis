@@ -67,17 +67,14 @@ class AegisGraph:
             workflow.add_edge("sanitize", "guardrails")
 
             # Tier 1 -> Tier 2 or Early Verdict
-            def route_after_guardrails(state: AegisState) -> str:
-                if state.get("should_block", False):
-                    return "verdict"
-                return "core_analysis"
+            from aegis.pipeline.router import should_block_content
 
             workflow.add_conditional_edges(
                 "guardrails",
-                route_after_guardrails,
+                should_block_content,
                 {
-                    "verdict": "verdict",
-                    "core_analysis": "structural",
+                    "block": "verdict",
+                    "continue": "structural",
                 },
             )
 
@@ -88,12 +85,9 @@ class AegisGraph:
             # Tier 2 -> Tier 3 or Final Verdict
             from aegis.pipeline.router import should_analyze_deep
 
-            def route_after_core(state: AegisState) -> str:
-                return should_analyze_deep(state)
-
             workflow.add_conditional_edges(
                 "visual",
-                route_after_core,
+                should_analyze_deep,
                 {
                     "full": "intent",
                     "standard": "verdict",
@@ -182,11 +176,7 @@ class AegisGraph:
         """Build a ScanResult from the final state."""
         from aegis.core.constants import RiskLevel
 
-        findings: list[AgentFinding] = []
-        for key in ["structural_finding", "semantic_finding", "intent_finding", "visual_finding", "behavioral_finding", "verdict_finding"]:
-            finding = state.get(key)
-            if finding:
-                findings.append(finding)
+        findings = state.get("findings", [])
 
         return ScanResult(
             job_id=state.get("job_id", "unknown"),

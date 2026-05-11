@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from aegis.api.middleware import CorrelationIdMiddleware, RequestLoggingMiddleware
-from aegis.api.routes import feedback, scan, session
+from aegis.api.routes import admin, feedback, scan, session
 from aegis.core.config import get_config
 from aegis.core.models import ErrorResponse, HealthResponse
 from aegis.version import __version__
@@ -43,6 +43,7 @@ def create_app() -> FastAPI:
     app.include_router(scan.router)
     app.include_router(session.router)
     app.include_router(feedback.router)
+    app.include_router(admin.router)
 
     @app.on_event("startup")
     async def on_startup() -> None:

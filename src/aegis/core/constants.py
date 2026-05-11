@@ -73,6 +73,11 @@ PROMPT_INJECTION_PATTERNS: list[str] = [
     r"--no-restrictions",
     r"---\s*new\s+instructions?\s*---",
     r"</?(instructions?|system|prompt)>",
+    # Multilingual Injection Patterns
+    r"تجاهل\s+كل\s+التعليمات\s+السابقة",  # Arabic: Ignore all previous instructions
+    r"تجاهل\s+التعليمات\s+السابقة",      # Arabic: Ignore previous instructions
+    r"تمام\s+پچھلی\s+ہدایات\s+کو\s+نظر\s+انداز\s+کریں",  # Urdu: Ignore all previous instructions
+    r"پچھلی\s+تمام\s+ہدایات\s+کو\s+نظر\s+انداز\s+کریں",  # Urdu variant
 ]
 
 ZERO_WIDTH_CHARS: list[str] = [
