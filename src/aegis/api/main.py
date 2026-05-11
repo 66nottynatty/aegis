@@ -88,6 +88,26 @@ def create_app() -> FastAPI:
         except Exception:
             services["supabase"] = "unavailable"
 
+        # Check Ollama availability (optional)
+        try:
+            import httpx
+            config = get_config()
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(f"{config.ollama.base_url}/api/tags")
+                if response.status_code == 200:
+                    services["ollama"] = "ok"
+                else:
+                    services["ollama"] = "degraded"
+        except Exception:
+            services["ollama"] = "unavailable"
+
+        # Check OpenRouter availability (optional)
+        import os
+        if os.getenv("OPENROUTER_API_KEY"):
+            services["openrouter"] = "configured"
+        else:
+            services["openrouter"] = "not_configured"
+
         return HealthResponse(
             status="ok",
             version=__version__,
