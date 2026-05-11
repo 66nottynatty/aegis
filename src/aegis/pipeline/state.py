@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import operator
 from typing import Annotated, Any, TypedDict
 
 from aegis.core.constants import ContentType
@@ -34,7 +35,7 @@ class AegisState(TypedDict):
     behavioral_finding: AgentFinding | None
 
     # Collection of all findings
-    findings: Annotated[list[AgentFinding], "append"]
+    findings: Annotated[list[AgentFinding], operator.add]
 
     # Verdict
     verdict_finding: AgentFinding | None

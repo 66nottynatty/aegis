@@ -35,6 +35,16 @@ def should_analyze_deep(state: AegisState) -> str:
     if semantic and semantic.score > 0.3:
         return "full"
 
+    # Check structural score for early signal
+    structural = state.get("structural_finding")
+    if structural and structural.score > 0.3:
+        return "full"
+
+    # Check visual score for early signal
+    visual = state.get("visual_finding")
+    if visual and visual.score > 0.3:
+        return "full"
+
     # Default to standard analysis
     return "standard"
 
