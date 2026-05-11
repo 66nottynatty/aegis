@@ -26,13 +26,30 @@ class BaseAegisAgent:
             self._init_memory()
 
     def _init_memory(self) -> None:
-        try:
-            from mem0 import Memory
+        config = get_config()
 
-            mem0_config = self._build_mem0_config()
-            self._memory_client = Memory.from_config(mem0_config)
+        # Try Mem0 first if enabled
+        if config.mem0.enabled:
+            try:
+                from mem0 import Memory
+
+                mem0_config = self._build_mem0_config()
+                self._memory_client = Memory.from_config(mem0_config)
+                logger.info("Mem0 memory initialized for agent %s", self.name)
+                return
+            except Exception as exc:
+                logger.debug("Mem0 memory init failed for agent %s: %s", self.name, exc)
+
+        # Fallback to Supabase memory
+        try:
+            from aegis.storage.memory import SupabaseMemoryFallback
+
+            self._memory_client = SupabaseMemoryFallback(self.name.value)
+            logger.info("Supabase fallback memory initialized for agent %s", self.name)
         except Exception as exc:
-            logger.warning("Mem0 memory init failed for agent %s: %s", self.name, exc)
+            logger.warning(
+                "Supabase memory fallback init failed for agent %s: %s", self.name, exc
+            )
             self._memory_client = None
 
     def _build_mem0_config(self) -> dict[str, Any]:

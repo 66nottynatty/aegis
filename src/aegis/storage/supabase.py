@@ -111,6 +111,30 @@ class SupabaseStore:
         except Exception as exc:
             logger.warning("Failed to increment session scan count: %s", exc)
 
+    async def get_session_summary(self, session_id: str) -> dict[str, Any]:
+        """Get aggregated statistics for a session using real SQL aggregation."""
+        try:
+            response = self.client.rpc(
+                "get_session_stats", {"session_uuid": session_id}
+            ).execute()
+            if response.data:
+                return response.data[0]
+            return {
+                "total_scans": 0,
+                "injections_detected": 0,
+                "avg_risk_score": 0.0,
+                "max_risk_score": 0.0,
+            }
+        except Exception as exc:
+            logger.warning("Failed to get session summary: %s", exc)
+            return {
+                "total_scans": 0,
+                "injections_detected": 0,
+                "avg_risk_score": 0.0,
+                "max_risk_score": 0.0,
+                "error": str(exc),
+            }
+
     async def store_feedback(self, feedback: FeedbackRequest, api_key_id: str) -> str:
         feedback_id = str(uuid.uuid4())
         try:
