@@ -66,25 +66,42 @@ class AegisGraph:
             workflow.add_edge("extract", "sanitize")
             workflow.add_edge("sanitize", "guardrails")
 
-            # Conditional routing after guardrails
+            # Tier 1 -> Tier 2 or Early Verdict
             def route_after_guardrails(state: AegisState) -> str:
                 if state.get("should_block", False):
                     return "verdict"
-                return "analysis"
+                return "core_analysis"
 
             workflow.add_conditional_edges(
                 "guardrails",
                 route_after_guardrails,
                 {
                     "verdict": "verdict",
-                    "analysis": "semantic",  # Start with semantic for all
+                    "core_analysis": "structural",
                 },
             )
 
-            # Sequential analysis flow
-            workflow.add_edge("semantic", "intent")
-            workflow.add_edge("intent", "behavioral")
+            # Tier 2: Core Analysis Chain
+            workflow.add_edge("structural", "semantic")
+            workflow.add_edge("semantic", "visual")
 
+            # Tier 2 -> Tier 3 or Final Verdict
+            from aegis.pipeline.router import should_analyze_deep
+
+            def route_after_core(state: AegisState) -> str:
+                return should_analyze_deep(state)
+
+            workflow.add_conditional_edges(
+                "visual",
+                route_after_core,
+                {
+                    "full": "intent",
+                    "standard": "verdict",
+                },
+            )
+
+            # Tier 3: Advanced Analysis Chain
+            workflow.add_edge("intent", "behavioral")
             workflow.add_edge("behavioral", "verdict")
 
             # Final steps
@@ -114,7 +131,7 @@ class AegisGraph:
         """Fallback sequential execution when LangGraph is unavailable."""
         logger.debug("Using fallback sequential execution")
 
-        # Run nodes sequentially
+        # Tier 1: Triage
         result = extract_node(state)
         state.update(result)
 
@@ -124,21 +141,35 @@ class AegisGraph:
         result = guardrails_node(state)
         state.update(result)
 
-        # Content-specific analysis
-        nodes_to_run = route_by_content_type(state)
+        if state.get("should_block"):
+            # Early exit to verdict
+            result = verdict_node(state)
+            state.update(result)
+            result = memory_node(state)
+            state.update(result)
+            return state
+
+        # Tier 2: Core Analysis
         node_map = {
             "structural": structural_node,
             "semantic": semantic_node,
-            "intent": intent_node,
             "visual": visual_node,
+            "intent": intent_node,
             "behavioral": behavioral_node,
         }
 
-        for node_name in nodes_to_run:
-            if node_name in node_map:
+        for node_name in ["structural", "semantic", "visual"]:
+            result = node_map[node_name](state)
+            state.update(result)
+
+        # Tier 3: Advanced Analysis (Conditional)
+        from aegis.pipeline.router import should_analyze_deep
+        if should_analyze_deep(state) == "full":
+            for node_name in ["intent", "behavioral"]:
                 result = node_map[node_name](state)
                 state.update(result)
 
+        # Final steps
         result = verdict_node(state)
         state.update(result)
 
